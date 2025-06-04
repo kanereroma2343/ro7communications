@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Memo - TESDA MBMS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script type="module" src="firebase-config.js"></script>
+</head>
+<body class="min-h-screen bg-gray-50">
+    <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <!-- Header -->
+        <div class="px-4 py-6 sm:px-0 flex justify-between items-center">
+            <h1 class="text-3xl font-bold text-gray-900">Create New Memo</h1>
+            <button onclick="window.history.back()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                <i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i>
+                Back
+            </button>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white p-4 rounded-lg shadow-lg">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMessage" class="hidden mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-md"></div>
+
+        <!-- Success Message -->
+        <div id="successMessage" class="hidden mb-4 p-4 bg-green-50 border border-green-200 text-green-800 rounded-md"></div>
+
+        <!-- Memo Form -->
+        <form id="memoForm" class="mt-6 bg-white shadow rounded-lg p-6">
+            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <!-- Memo Number -->
+                <div>
+                    <label for="memoNumber" class="block text-sm font-medium text-gray-700">Memo Number</label>
+                    <input type="text" id="memoNumber" name="memoNumber" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <!-- Title -->
+                <div>
+                    <label for="title" class="block text-sm font-medium text-gray-700">Title</label>
+                    <input type="text" id="title" name="title" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <!-- Category -->
+                <div>
+                    <label for="category" class="block text-sm font-medium text-gray-700">Category</label>
+                    <select id="category" name="category" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Select Category</option>
+                        <option value="Announcement">Announcement</option>
+                        <option value="Meeting">Meeting</option>
+                        <option value="Report">Report</option>
+                        <option value="Request">Request</option>
+                    </select>
+                </div>
+
+                <!-- Priority -->
+                <div>
+                    <label for="priority" class="block text-sm font-medium text-gray-700">Priority</label>
+                    <select id="priority" name="priority" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Select Priority</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                </div>
+
+                <!-- Recipients -->
+                <div class="sm:col-span-2">
+                    <label for="recipients" class="block text-sm font-medium text-gray-700">Recipients</label>
+                    <select id="recipients" name="recipients" multiple required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="ORD">ORD</option>
+                        <option value="ROD">ROD</option>
+                        <option value="FASD">FASD</option>
+                    </select>
+                </div>
+
+                <!-- Description -->
+                <div class="sm:col-span-2">
+                    <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
+                    <textarea id="description" name="description" rows="4" required
+                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button type="submit"
+                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <i data-lucide="save" class="w-4 h-4 mr-2"></i>
+                    Save Memo
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script type="module">
+        import { createMemo, auth } from './firebase-config.js';
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Get DOM elements
+        const memoForm = document.getElementById('memoForm');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+
+        // Handle form submission
+        memoForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            try {
+                // Show loading overlay
+                loadingOverlay.classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+                successMessage.classList.add('hidden');
+
+                // Get current user
+                const currentUser = auth.currentUser;
+                if (!currentUser) {
+                    throw new Error('User not authenticated');
+                }
+
+                // Get form data
+                const formData = new FormData(memoForm);
+                const userData = JSON.parse(localStorage.getItem('tesdaUser'));
+                if (!userData) {
+                    throw new Error('User data not found');
+                }
+
+                const memoData = {
+                    memoNumber: formData.get('memoNumber'),
+                    title: formData.get('title'),
+                    category: formData.get('category'),
+                    priority: formData.get('priority'),
+                    recipients: Array.from(formData.getAll('recipients')),
+                    description: formData.get('description'),
+                    createdBy: currentUser.email,
+                    department: userData.department,
+                    createdAt: new Date(),
+                    status: 'pending'
+                };
+
+                // Create memo in Firestore
+                const memoId = await createMemo(memoData);
+                console.log('Memo created with ID:', memoId);
+
+                // Show success message
+                successMessage.textContent = 'Memo created successfully!';
+                successMessage.classList.remove('hidden');
+
+                // Reset form
+                memoForm.reset();
+
+                // Redirect after a short delay
+                setTimeout(() => {
+                    const userData = JSON.parse(localStorage.getItem('tesdaUser'));
+                    if (userData.department === 'ORD') {
+                        window.location.href = 'ord-dashboard.html';
+                    } else {
+                        window.location.href = 'user-dashboard.html';
+                    }
+                }, 2000);
+
+            } catch (error) {
+                console.error('Error creating memo:', error);
+                errorMessage.textContent = error.message || 'Error creating memo. Please try again.';
+                errorMessage.classList.remove('hidden');
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

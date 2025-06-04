@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Memo - TESDA MBMS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script type="module" src="firebase-config.js"></script>
+</head>
+<body class="min-h-screen bg-gray-50">
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-4 rounded-lg shadow-lg">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+    </div>
+
+    <!-- Error Message -->
+    <div id="errorMessage" class="hidden fixed top-4 right-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-md shadow-lg z-50"></div>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div class="flex items-center">
+                <i data-lucide="file-text" class="w-8 h-8 text-blue-600 mr-3"></i>
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Memo Details</h1>
+                    <p class="text-sm text-gray-500">View complete memo information</p>
+                </div>
+            </div>
+            <button onclick="window.history.back()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                <i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i>
+                Back
+            </button>
+        </div>
+
+        <!-- Memo Details -->
+        <div class="bg-white shadow rounded-lg overflow-hidden">
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Memo Number -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Memo Number</h3>
+                        <p id="memoNumber" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Title -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Title</h3>
+                        <p id="title" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Department -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Department</h3>
+                        <p id="department" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Category -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Category</h3>
+                        <p id="category" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Priority -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Priority</h3>
+                        <p id="priority" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Status -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Status</h3>
+                        <p id="status" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Created By -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Created By</h3>
+                        <p id="createdBy" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Created At -->
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Created At</h3>
+                        <p id="createdAt" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Recipients -->
+                    <div class="md:col-span-2">
+                        <h3 class="text-sm font-medium text-gray-500">Recipients</h3>
+                        <p id="recipients" class="mt-1 text-lg text-gray-900"></p>
+                    </div>
+
+                    <!-- Description -->
+                    <div class="md:col-span-2">
+                        <h3 class="text-sm font-medium text-gray-500">Description</h3>
+                        <p id="description" class="mt-1 text-lg text-gray-900 whitespace-pre-wrap"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, auth } from './firebase-config.js';
+        import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Get DOM elements
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Check authentication
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Get memo ID from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const memoId = urlParams.get('id');
+
+            if (!memoId) {
+                errorMessage.textContent = 'No memo ID provided';
+                errorMessage.classList.remove('hidden');
+                return;
+            }
+
+            // Load memo details
+            await loadMemoDetails(memoId);
+        });
+
+        // Load memo details from Firestore
+        async function loadMemoDetails(memoId) {
+            try {
+                loadingOverlay.classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+
+                const memoRef = doc(db, "memos", memoId);
+                const memoDoc = await getDoc(memoRef);
+
+                if (!memoDoc.exists()) {
+                    throw new Error('Memo not found');
+                }
+
+                const memo = memoDoc.data();
+
+                // Update UI with memo details
+                document.getElementById('memoNumber').textContent = memo.memoNumber;
+                document.getElementById('title').textContent = memo.title;
+                document.getElementById('department').textContent = memo.department;
+                document.getElementById('category').textContent = memo.category;
+                document.getElementById('priority').textContent = memo.priority;
+                document.getElementById('status').textContent = memo.status;
+                document.getElementById('createdBy').textContent = memo.createdBy;
+                document.getElementById('createdAt').textContent = memo.createdAt.toDate().toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+                document.getElementById('recipients').textContent = memo.recipients.join(', ');
+                document.getElementById('description').textContent = memo.description;
+
+            } catch (error) {
+                console.error('Error loading memo details:', error);
+                errorMessage.textContent = error.message || 'Error loading memo details. Please try again.';
+                errorMessage.classList.remove('hidden');
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html> 
