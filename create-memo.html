@@ -35,11 +35,12 @@
         <!-- Memo Form -->
         <form id="memoForm" class="mt-6 bg-white shadow rounded-lg p-6">
             <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <!-- Memo Number -->
+                <!-- Memo Number (Read-only) -->
                 <div>
-                    <label for="memoNumber" class="block text-sm font-medium text-gray-700">Memo Number</label>
-                    <input type="text" id="memoNumber" name="memoNumber" required
-                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <label class="block text-sm font-medium text-gray-700">Memo Number</label>
+                    <div class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 bg-gray-50">
+                        <span id="assignedMemoNumber" class="text-gray-900">Loading...</span>
+                    </div>
                 </div>
 
                 <!-- Title -->
@@ -105,6 +106,8 @@
 
     <script type="module">
         import { createMemo, auth } from './firebase-config.js';
+        import { doc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+        import { db } from './firebase-config.js';
 
         // Initialize Lucide icons
         lucide.createIcons();
@@ -114,6 +117,16 @@
         const loadingOverlay = document.getElementById('loadingOverlay');
         const errorMessage = document.getElementById('errorMessage');
         const successMessage = document.getElementById('successMessage');
+        const assignedMemoNumber = document.getElementById('assignedMemoNumber');
+
+        // Set up real-time listener for next memo number
+        const memoNumberRef = doc(db, "memoNumbers", "current");
+        onSnapshot(memoNumberRef, (doc) => {
+            if (doc.exists()) {
+                const nextNumber = doc.data().number + 1;
+                assignedMemoNumber.textContent = `${String(nextNumber).padStart(4, '0')}`;
+            }
+        });
 
         // Handle form submission
         memoForm.addEventListener('submit', async (e) => {
@@ -138,22 +151,19 @@
                     throw new Error('User data not found');
                 }
 
+                // Create memo data object
                 const memoData = {
-                    memoNumber: formData.get('memoNumber'),
                     title: formData.get('title'),
-                    category: formData.get('category'),
-                    priority: formData.get('priority'),
-                    recipients: Array.from(formData.getAll('recipients')),
                     description: formData.get('description'),
-                    createdBy: currentUser.email,
                     department: userData.department,
-                    createdAt: new Date(),
-                    status: 'pending'
+                    recipients: formData.get('recipients').split(',').map(r => r.trim()),
+                    priority: formData.get('priority'),
+                    category: formData.get('category'),
+                    createdBy: userData.username
                 };
 
-                // Create memo in Firestore
-                const memoId = await createMemo(memoData);
-                console.log('Memo created with ID:', memoId);
+                // Create memo
+                await createMemo(memoData);
 
                 // Show success message
                 successMessage.textContent = 'Memo created successfully!';
@@ -162,19 +172,14 @@
                 // Reset form
                 memoForm.reset();
 
-                // Redirect after a short delay
+                // Redirect after 2 seconds
                 setTimeout(() => {
-                    const userData = JSON.parse(localStorage.getItem('tesdaUser'));
-                    if (userData.department === 'ORD') {
-                        window.location.href = 'ord-dashboard.html';
-                    } else {
-                        window.location.href = 'user-dashboard.html';
-                    }
+                    window.location.href = userData.department === 'ORD' ? 'ord-dashboard.html' : 'user-dashboard.html';
                 }, 2000);
 
             } catch (error) {
                 console.error('Error creating memo:', error);
-                errorMessage.textContent = error.message || 'Error creating memo. Please try again.';
+                errorMessage.textContent = 'Error creating memo. Please try again.';
                 errorMessage.classList.remove('hidden');
             } finally {
                 loadingOverlay.classList.add('hidden');

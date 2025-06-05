@@ -130,7 +130,9 @@
     </div>
 
     <script type="module">
-        import { getMemosByDepartment, logoutUser, auth } from './firebase-config.js';
+        import { logoutUser, auth } from './firebase-config.js';
+        import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+        import { db } from './firebase-config.js';
 
         // Initialize Lucide icons
         lucide.createIcons();
@@ -145,6 +147,7 @@
         const pendingMemos = document.getElementById('pendingMemos');
         const approvedMemos = document.getElementById('approvedMemos');
         const searchInput = document.getElementById('searchInput');
+        const nextMemoNumber = document.getElementById('nextMemoNumber');
 
         let allMemos = []; // Store all memos for filtering
 
@@ -161,37 +164,40 @@
                 userInfo.textContent = `${userData.username} (${userData.department})`;
             }
 
-            // Load memos
-            await loadMemos();
+            // Set up real-time listener for memos
+            const memosQuery = query(
+                collection(db, "memos"),
+                where("department", "in", ["ORD", "ROD", "FASD"]),
+                orderBy("createdAt", "desc")
+            );
 
-            // Add search input event listener
-            searchInput.addEventListener('input', filterMemos);
-        });
+            onSnapshot(memosQuery, (snapshot) => {
+                allMemos = [];
+                snapshot.forEach((doc) => {
+                    allMemos.push({
+                        id: doc.id,
+                        ...doc.data()
+                    });
+                });
 
-        // Filter memos based on search input
-        function filterMemos() {
-            const searchTerm = searchInput.value.toLowerCase();
-            
-            const filteredMemos = allMemos.filter(memo => {
-                return (
-                    memo.memoNumber.toLowerCase().includes(searchTerm) ||
-                    memo.title.toLowerCase().includes(searchTerm) ||
-                    memo.department.toLowerCase().includes(searchTerm) ||
-                    memo.recipients.some(recipient => recipient.toLowerCase().includes(searchTerm)) ||
-                    memo.category.toLowerCase().includes(searchTerm) ||
-                    memo.priority.toLowerCase().includes(searchTerm) ||
-                    memo.status.toLowerCase().includes(searchTerm)
-                );
+                // Update stats
+                totalMemos.textContent = allMemos.length;
+                pendingMemos.textContent = allMemos.filter(m => m.status === 'pending').length;
+                approvedMemos.textContent = allMemos.filter(m => m.status === 'approved').length;
+
+                // Update table
+                updateTable(allMemos);
             });
 
-            // Update stats with filtered results
-            totalMemos.textContent = filteredMemos.length;
-            pendingMemos.textContent = filteredMemos.filter(m => m.status === 'pending').length;
-            approvedMemos.textContent = filteredMemos.filter(m => m.status === 'approved').length;
-
-            // Update table with filtered results
-            updateTable(filteredMemos);
-        }
+            // Set up real-time listener for next memo number
+            const memoNumberRef = doc(db, "memoNumbers", "current");
+            onSnapshot(memoNumberRef, (doc) => {
+                if (doc.exists()) {
+                    const nextNumber = doc.data().number + 1;
+                    nextMemoNumber.textContent = `${String(nextNumber).padStart(4, '0')}`;
+                }
+            });
+        });
 
         // Update table with provided memos
         function updateTable(memos) {
@@ -204,8 +210,6 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${memo.title}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${memo.department}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${memo.recipients.join(', ')}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${memo.category}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${memo.priority}</td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(memo.status)}">
                             ${memo.status}
@@ -224,39 +228,6 @@
                 `;
                 memosTableBody.appendChild(row);
             });
-        }
-
-        // Load memos from Firestore
-        async function loadMemos() {
-            try {
-                loadingOverlay.classList.remove('hidden');
-                errorMessage.classList.add('hidden');
-
-                // Get memos from ORD, ROD, and FASD
-                const ordMemos = await getMemosByDepartment('ORD');
-                const rodMemos = await getMemosByDepartment('ROD');
-                const fasdMemos = await getMemosByDepartment('FASD');
-
-                // Combine all memos
-                allMemos = [...ordMemos, ...rodMemos, ...fasdMemos];
-                
-                // Sort memos by creation date (newest first)
-                allMemos.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
-
-                // Update stats and table
-                totalMemos.textContent = allMemos.length;
-                pendingMemos.textContent = allMemos.filter(m => m.status === 'pending').length;
-                approvedMemos.textContent = allMemos.filter(m => m.status === 'approved').length;
-
-                updateTable(allMemos);
-
-            } catch (error) {
-                console.error('Error loading memos:', error);
-                errorMessage.textContent = 'Error loading memos. Please try again.';
-                errorMessage.classList.remove('hidden');
-            } finally {
-                loadingOverlay.classList.add('hidden');
-            }
         }
 
         // Get status color class
@@ -290,6 +261,33 @@
         window.viewMemo = function(memoId) {
             window.location.href = `view-memo.html?id=${memoId}`;
         };
+
+        // Search functionality
+        searchInput.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            
+            if (!searchTerm) {
+                updateTable(allMemos);
+                return;
+            }
+
+            const filteredMemos = allMemos.filter(memo => {
+                return (
+                    memo.memoNumber.toLowerCase().includes(searchTerm) ||
+                    memo.title.toLowerCase().includes(searchTerm) ||
+                    memo.department.toLowerCase().includes(searchTerm) ||
+                    memo.recipients.some(r => r.toLowerCase().includes(searchTerm)) ||
+                    memo.status.toLowerCase().includes(searchTerm) ||
+                    memo.createdAt.toDate().toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    }).toLowerCase().includes(searchTerm)
+                );
+            });
+
+            updateTable(filteredMemos);
+        });
     </script>
 </body>
 </html> 

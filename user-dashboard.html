@@ -223,6 +223,8 @@
         }
 
         // Load memos from Firestore
+        let unsubscribeMemos = null; // Store the unsubscribe function
+
         async function loadMemos() {
             try {
                 loadingOverlay.classList.remove('hidden');
@@ -230,17 +232,21 @@
 
                 // Get memos for the user's department
                 const userData = JSON.parse(localStorage.getItem('tesdaUser'));
-                allMemos = await getMemosByDepartment(userData.department);
                 
-                // Sort memos by creation date (newest first)
-                allMemos.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
+                // Set up real-time listener
+                unsubscribeMemos = await getMemosByDepartment(userData.department, (memos) => {
+                    allMemos = memos;
+                    
+                    // Sort memos by creation date (newest first)
+                    allMemos.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
 
-                // Update stats and table
-                totalMemos.textContent = allMemos.length;
-                pendingMemos.textContent = allMemos.filter(m => m.status === 'pending').length;
-                approvedMemos.textContent = allMemos.filter(m => m.status === 'approved').length;
+                    // Update stats and table
+                    totalMemos.textContent = allMemos.length;
+                    pendingMemos.textContent = allMemos.filter(m => m.status === 'pending').length;
+                    approvedMemos.textContent = allMemos.filter(m => m.status === 'approved').length;
 
-                updateTable(allMemos);
+                    updateTable(allMemos);
+                });
 
             } catch (error) {
                 console.error('Error loading memos:', error);
@@ -250,6 +256,16 @@
                 loadingOverlay.classList.add('hidden');
             }
         }
+
+        // Cleanup function to remove listeners
+        function cleanup() {
+            if (unsubscribeMemos) {
+                unsubscribeMemos();
+            }
+        }
+
+        // Add cleanup on page unload
+        window.addEventListener('beforeunload', cleanup);
 
         // Get status color class
         function getStatusColor(status) {
@@ -265,9 +281,10 @@
             }
         }
 
-        // Handle logout
+        // Update logout to include cleanup
         logoutBtn.addEventListener('click', async () => {
             try {
+                cleanup(); // Clean up listeners
                 await logoutUser();
                 localStorage.removeItem('tesdaUser');
                 window.location.href = 'index.html';

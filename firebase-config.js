@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc, deleteDoc, runTransaction, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 // Your web app's Firebase configuration
@@ -22,9 +22,13 @@ const auth = getAuth(app);
 // Memo Functions
 async function createMemo(memoData) {
     try {
-        // Add timestamp for sorting
+        // Get next memo number
+        const memoNumber = await getNextMemoNumber();
+        
+        // Add timestamp and memo number
         const memoWithTimestamp = {
             ...memoData,
+            memoNumber: `${String(memoNumber).padStart(4, '0')}`,
             createdAt: new Date(),
             status: 'pending'
         };
@@ -38,17 +42,23 @@ async function createMemo(memoData) {
     }
 }
 
-async function getMemosByDepartment(department) {
+async function getMemosByDepartment(department, callback) {
     try {
         const q = query(
             collection(db, "memos"),
             where("department", "==", department)
         );
-        const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        
+        // Return the unsubscribe function from onSnapshot
+        return onSnapshot(q, (querySnapshot) => {
+            const memos = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            // Sort memos by createdAt in memory
+            memos.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
+            callback(memos);
+        });
     } catch (error) {
         console.error("Error getting memos: ", error);
         throw error;
@@ -87,6 +97,42 @@ async function deleteMemoFromFirestore(memoId) {
         await deleteDoc(memoRef);
     } catch (error) {
         console.error("Error deleting memo: ", error);
+        throw error;
+    }
+}
+
+// Memo Number Functions
+async function getNextMemoNumber() {
+    try {
+        const memoNumberRef = doc(db, "memoNumbers", "current");
+        const memoNumberDoc = await runTransaction(db, async (transaction) => {
+            const doc = await transaction.get(memoNumberRef);
+            if (!doc.exists()) {
+                // Initialize with 1 if document doesn't exist
+                transaction.set(memoNumberRef, { number: 1 });
+                return { number: 1 };
+            }
+            const currentNumber = doc.data().number;
+            transaction.update(memoNumberRef, { number: currentNumber + 1 });
+            return { number: currentNumber };
+        });
+        return memoNumberDoc.number;
+    } catch (error) {
+        console.error("Error getting next memo number: ", error);
+        throw error;
+    }
+}
+
+async function getCurrentMemoNumber() {
+    try {
+        const memoNumberRef = doc(db, "memoNumbers", "current");
+        const memoNumberDoc = await getDoc(memoNumberRef);
+        if (!memoNumberDoc.exists()) {
+            return 0;
+        }
+        return memoNumberDoc.data().number;
+    } catch (error) {
+        console.error("Error getting current memo number: ", error);
         throw error;
     }
 }
@@ -214,5 +260,6 @@ export {
     authenticateUser,
     getUserData,
     logoutUser,
-    initializeUsers
+    initializeUsers,
+    getCurrentMemoNumber
 }; 
